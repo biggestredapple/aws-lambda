@@ -1,0 +1,270 @@
+service: serverless-bank-integration-api
+
+frameworkVersion: "3"
+
+plugins:
+  - serverless-plugin-scripts
+  - serverless-offline
+  - serverless-dynamodb-local
+
+package:
+  individually: true # Enables individual packaging for each function. If true you must provide package for each function. Defaults to false
+  excludeDevDependencies: true # Config if Serverless should automatically exclude dev dependencies in the deployment package. Defaults to true
+  patterns: # Specify the directories and files which should be included in the deployment package
+    - "!./**"
+    - node_modules/**
+    - "!node_modules/aws-sdk/**"
+    - "!node_modules/**/node_modules/aws-sdk/**"
+
+custom:
+  # scripts:
+  #   hooks:
+  #     "before:package:createDeploymentArtifacts": npm run build
+
+  projectName: BankIntegrationApi
+  stage: ${opt:stage, "dev"}
+  region: ${opt:region, "eu-west-1"}
+
+  cfTags:
+    - Key: CreatedBy
+      Value: "nakao@blockdance.io"
+    - Key: Project
+      Value: ${self:custom.projectName}
+    - Key: ProjectEnvironment
+      Value: ${self:custom.stage}
+
+  slsTags:
+    CreatedBy: "nakao@blockdance.io"
+    Project: ${self:custom.projectName}
+    ProjectEnvironment: ${self:custom.stage}
+
+  dynamodb:
+    stages:
+      - local
+
+  serverless-offline:
+    httpPort: 4000
+
+  accountRequestTable: ServerlessBankIntegrationApi-Account-${self:custom.stage}
+
+  apiGatewayId:
+    local: 0liimcbux3
+    dev: 0liimcbux3
+    stg2: uqmrk1g21l
+  apiGatewayRootResourceId:
+    local: xfjxzmtzyh
+    dev: xfjxzmtzyh
+    stg2: e9npn4ivnd
+  mockBankApi:
+    local: http://localhost:3003/api/v2
+    dev: https://saas-emi-banking-mockup-server.dev.blockdance.io/api/v2
+    stg2: https://saas-emi-banking-mockup-server.stg2.blockdance.io/api/v2
+
+  customerBackendServer:
+    local: http://localhost:3001/api/v2
+    dev: https://api.dev.blockdance.io/customer/api/v2
+    stg2: https://api.stg2.blockdance.io/customer/api/v2
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  stage: ${self:custom.stage}
+  # profile: bd-stg # profile is only used for local testing
+  region: ${self:custom.region}
+  timeout: 60
+  memorySize: 256
+  versionFunctions: false
+  apiGateway:
+    restApiId: ${self:custom.apiGatewayId.${self:custom.stage}}
+    restApiRootResourceId: ${self:custom.apiGatewayRootResourceId.${self:custom.stage}}
+  stackTags: ${self:custom.slsTags}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeTable
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - "Fn::GetAtt": [AccountRequestTable, Arn]
+  environment:
+    ACCOUNT_REQUEST_TABLE_NAME: ${self:custom.accountRequestTable}
+    MOCK_BANK_API: ${self:custom.mockBankApi.${self:custom.stage}}
+    CUSTOMER_BACKEND_SERVER: ${self:custom.customerBackendServer.${self:custom.stage}}
+
+functions:
+  health:
+    name: ${self:custom.projectName}-Health-${self:custom.stage} # Deployed Lambda name
+    description: Get Account Detail
+    handler: build/function/APIs/health/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/APIs/health/**"
+    events:
+      - http:
+          method: Get
+          path: /bank-integration/
+          private: false
+          cors: true
+      - http:
+          method: Get
+          path: /bank-integration/{proxy+}
+          private: false
+          cors: true
+
+  get-account-detail:
+    name: ${self:custom.projectName}-GetAccountDetail-${self:custom.stage} # Deployed Lambda name
+    description: Get Account Detail
+    handler: build/function/APIs/get-account-detail/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/APIs/get-account-detail/**"
+    events:
+      - http:
+          method: Get
+          path: /bank-integration/account
+          private: false
+          cors: true
+      - http:
+          method: Get
+          path: /bank-integration/account/{proxy+}
+          private: false
+          cors: true
+
+  create-account:
+    name: ${self:custom.projectName}-CreateAccount-${self:custom.stage} # Deployed Lambda name
+    description: Create Account
+    handler: build/function/APIs/create-account/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/APIs/create-account/**"
+    events:
+      - http:
+          method: POST
+          path: /bank-integration/account
+          private: false
+          cors: true
+      - http:
+          method: POST
+          path: /bank-integration/account/{proxy+}
+          private: false
+          cors: true
+
+  send-out-transaction:
+    name: ${self:custom.projectName}-SendOutTransaction-${self:custom.stage} # Deployed Lambda name
+    description: Send Out Transaction
+    handler: build/function/APIs/send-out-transaction/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/APIs/send-out-transaction/**"
+    events:
+      - http:
+          method: POST
+          path: /bank-integration/account/send
+          private: false
+          cors: true
+      - http:
+          method: POST
+          path: /bank-integration/account/send/{proxy+}
+          private: false
+          cors: true
+
+  create-account-webhook:
+    name: ${self:custom.projectName}-CreateAccountWebhook-${self:custom.stage} # Deployed Lambda name
+    description: Create Account Webhook
+    handler: build/function/Webhooks/create-account/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/Webhooks/create-account/**"
+    events:
+      - http:
+          method: POST
+          path: /bank-integration/webhook/create-account
+          private: false
+          cors: true
+      - http:
+          method: POST
+          path: /bank-integration/webhook/create-account/{proxy+}
+          private: false
+          cors: true
+
+  send-out-transaction-webhook:
+    name: ${self:custom.projectName}-SendOutTransactionWebhook-${self:custom.stage} # Deployed Lambda name
+    description: Send Out Transaction Webhook.
+    handler: build/function/Webhooks/send-out-transaction/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/Webhooks/send-out-transaction/**"
+    events:
+      - http:
+          method: POST
+          path: /bank-integration/webhook/send-out-transaction
+          private: false
+          cors: true
+      - http:
+          method: POST
+          path: /bank-integration/webhook/send-out-transaction/{proxy+}
+          private: false
+          cors: true
+
+  receive-transaction-webhook:
+    name: ${self:custom.projectName}-ReceiveTransaction-${self:custom.stage} # Deployed Lambda name
+    description: Receive Transaction Webhook.
+    handler: build/function/Webhooks/receive-transaction/index.handler
+    tags: ${self:custom.slsTags}
+    timeout: 30
+    memorySize: 512
+    package:
+      patterns:
+        - "build/config/**"
+        - "build/lib/**"
+        - "build/function/Webhooks/receive-transaction/**"
+    events:
+      - http:
+          method: POST
+          path: /bank-integration/webhook/receive-transaction
+          private: false
+          cors: true
+      - http:
+          method: POST
+          path: /bank-integration/webhook/receive-transaction/{proxy+}
+          private: false
+          cors: true
+
+resources:
+  - ${file(./resources/dynamodb.yml)}
